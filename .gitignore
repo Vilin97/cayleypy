@@ -9,6 +9,7 @@ htmlcov/
 .venv/
 venv/
 dist/
+logs/
 
 # Sphinx
 docs/_build
