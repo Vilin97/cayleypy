@@ -7,6 +7,7 @@ import wandb
 from cayleypy import CayleyGraph, PermutationGroups
 
 def run_single_n(k: int, n: int):
+    print(f"Running for k={k}, n={n}")
     torch.cuda.reset_peak_memory_stats()
     t0 = time.time()
 
@@ -22,15 +23,17 @@ def run_single_n(k: int, n: int):
     torch.cuda.synchronize()
     peak_bytes = torch.cuda.max_memory_allocated()
 
-    print(f"n={n}, diameter: {diameter}, layer sizes: {layer_sizes}")
-    print(f"Peak GPU memory: {peak_bytes / 1024**3:.3f} GiB")
-    print(f"Runtime: {runtime:.3f} seconds")
-
     wandb.init(
         project="cayley_consecutive_k_cycles",
         name=f"k_{k}_n_{n}",
         config={"k": k, "n": n},
     )
+
+    print(f"Running for k={k}, n={n}")
+    print(f"n={n}, diameter: {diameter}, layer sizes: {layer_sizes}")
+    print(f"Peak GPU memory: {peak_bytes / 1024**3:.3f} GiB")
+    print(f"Runtime: {runtime:.3f} seconds")
+
 
     wandb.log(
         {

@@ -3,10 +3,9 @@ import networkx as nx
 from cayleypy import CayleyGraph, PermutationGroups
 from tqdm import tqdm
 import torch
-import matplotlib.pyplot as plt
 #%%
 k = 7
-max_diam = 33 # 33
+max_diam = 30 # 33
 diams = []
 last_layers = []
 memory_stats = []
@@ -26,6 +25,7 @@ for n in tqdm(range(k,max_diam + 1), desc="Computing diameters"):
     memory_stats.append(peak_bytes)
 
 #%%
+import matplotlib.pyplot as plt
 plt.figure(figsize=(8,5))
 plt.plot(range(k, max_diam + 1), memory_stats, marker='o', linewidth=2)
 plt.title(f"Peak GPU Memory vs n for consecutive_k_cycles (k={k}) with c.s.", fontsize=14, pad=12)

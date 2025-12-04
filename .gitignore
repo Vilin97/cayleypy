@@ -10,6 +10,7 @@ htmlcov/
 venv/
 dist/
 logs/
+wandb/
 
 # Sphinx
 docs/_build
