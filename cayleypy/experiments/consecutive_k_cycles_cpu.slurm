@@ -1,23 +1,24 @@
 #!/bin/bash
 #SBATCH --job-name=consecutive_k_cycles
 #SBATCH --account=amath
-#SBATCH --partition=gpu-l40s
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=50G
-#SBATCH --time=12:00:00
-#SBATCH --array=0-3
+#SBATCH --partition=cpu-g2
+#SBATCH --cpus-per-task=15
+#SBATCH --mem=800G
+#SBATCH --time=48:00:00
+#SBATCH --array=0-1
 #SBATCH --output=logs/%x_%N_%A_%a.out
 
 KS=(7)
-
-NS=(35 36 37 38)
+NS=(37)
+MODES=(consecutive wrapped)
 
 tid=$SLURM_ARRAY_TASK_ID
 
-idx_k=$(( tid % 1 ))
-idx_n=$(( tid / 1 ))
+idx_mode=$(( tid % 2 ))
+idx_k=0
+idx_n=0
 
+mode=${MODES[$idx_mode]}
 k=${KS[$idx_k]}
 n=${NS[$idx_n]}
 
@@ -26,4 +27,6 @@ conda activate cayley
 
 srun python3 cayleypy/experiments/consecutive_k_cycles.py \
   --k "${k}" \
-  --n "${n}"
+  --n "${n}" \
+  --mode "${mode}" \
+  --device "cpu"
