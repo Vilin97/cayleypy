@@ -1,14 +1,21 @@
 #%%
-"""Download log files from Weights & Biases runs."""
+"""Download only files needed for analysis."""
 import wandb
 from tqdm import tqdm
 
 api = wandb.Api()
 runs = api.runs("vilin97-uw/cayley_consecutive_k_cycles")
 
+NEEDED = {
+    "wandb-metadata.json",
+    "wandb-summary.json",
+    "output.log",
+}
+
 for r in tqdm(runs):
     for f in r.files():
-        f.download(root=f"wandb_logs/{r.name}", replace=True)
+        if f.name in NEEDED:
+            f.download(root=f"wandb_logs/{r.name}", replace=True)
 
 #%%
 """Extract diameters and layer sizes from logs and save to CSV."""
@@ -76,3 +83,5 @@ with out.open("w", newline="") as f:
     w.writerows(rows)
 
 print(f"Wrote {len(rows)} rows to {out}")
+
+# %%
