@@ -10,17 +10,17 @@
 
 KS=(4 5 6)
 NS=(37)
-MODES=(consecutive)
+GENERATOR_FAMILY=consecutive
+CENTRAL_MODE=alternating
+DEVICE=cpu
 
 tid=$SLURM_ARRAY_TASK_ID
 
 idx_k=$tid
 idx_n=0
-idx_mode=0
 
 k=${KS[$idx_k]}
 n=${NS[$idx_n]}
-mode=${MODES[$idx_mode]}
 
 source /gscratch/amath/vilin/conda/etc/profile.d/conda.sh
 conda activate cayley
@@ -28,5 +28,6 @@ conda activate cayley
 srun python3 cayleypy/experiments/consecutive_k_cycles.py \
   --k "${k}" \
   --n "${n}" \
-  --mode "${mode}" \
-  --device "cpu"
+  --device "${DEVICE}" \
+  --generator_family "${GENERATOR_FAMILY}" \
+  --central_mode "${CENTRAL_MODE}"
