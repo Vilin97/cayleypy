@@ -1,4 +1,4 @@
-"python cayleypy/experiments/consecutive_k_cycles.py --k 7 --n 25 --mode consecutive --device cpu"
+# "python cayleypy/experiments/consecutive_k_cycles.py --k 7 --n 25 --device cpu --generator_family consecutive --central_mode alternating"
 
 import argparse
 import time
@@ -8,13 +8,22 @@ import wandb
 from cayleypy import CayleyGraph, PermutationGroups
 
 
-def run_single_n(k: int, n: int, use_consecutive: bool, device: str):
+def run_single_n(k: int, n: int, generator_family: str, device: str, central_mode: str):
     wandb.init(
         project="cayley_consecutive_k_cycles",
-        name=f"k_{k}_n_{n}_{'consecutive' if use_consecutive else 'wrapped'}_{device}",
-        config={"k": k, "n": n, "use_consecutive": use_consecutive, "device": device},
+        name=f"k_{k}_n_{n}_{generator_family}_{central_mode}_{device}",
+        config={
+            "k": k,
+            "n": n,
+            "generator_family": generator_family,
+            "device": device,
+            "central_mode": central_mode,
+        },
     )
-    print(f"Running for k={k}, n={n}, mode={'consecutive' if use_consecutive else 'wrapped'}, device={device}")
+    print(
+        f"Running for k={k}, n={n}, generator_family={generator_family}, "
+        f"device={device}, central_mode={central_mode}"
+    )
 
     peak_bytes = None
     proc = psutil.Process()
@@ -27,14 +36,28 @@ def run_single_n(k: int, n: int, use_consecutive: bool, device: str):
 
     t0 = time.time()
 
-    central = [0] * (n // 2) + [1] * (n - n // 2)
-    if use_consecutive:
-        defn = PermutationGroups.consecutive_k_cycles(n, k).with_central_state(central)
+    if central_mode == "alternating":
+        central = [0, 1] * (n // 2) + [0] * (n - 2 * (n // 2))
+    elif central_mode == "block":
+        central = [0] * (n // 2) + [1] * (n - n // 2)
     else:
-        defn = PermutationGroups.wrapped_k_cycles(n, k).make_inverse_closed().with_central_state(central)
+        raise ValueError(f"Invalid central_mode: {central_mode}")
+
+    if generator_family == "consecutive":
+        defn = PermutationGroups.consecutive_k_cycles(n, k).with_central_state(central)
+    elif generator_family == "wrapped":
+        defn = (
+            PermutationGroups.wrapped_k_cycles(n, k)
+            .make_inverse_closed()
+            .with_central_state(central)
+        )
+    else:
+        raise ValueError(f"Invalid generator_family: {generator_family}")
+
     graph = CayleyGraph(defn)
     result = graph.bfs(return_all_edges=False, return_all_hashes=False)
 
+    last_layer = result.last_layer()
     runtime = time.time() - t0
     diameter = result.diameter()
     layer_sizes = result.layer_sizes
@@ -46,8 +69,12 @@ def run_single_n(k: int, n: int, use_consecutive: bool, device: str):
         mem_after = proc.memory_info().rss
         peak_bytes = max(mem_before, mem_after)
 
-    print(f"Running for k={k}, n={n}, mode={'consecutive' if use_consecutive else 'wrapped'}, device={device}")
+    print(
+        f"Running for k={k}, n={n}, generator_family={generator_family}, "
+        f"device={device}, central_mode={central_mode}"
+    )
     print(f"n={n}, diameter: {diameter}, layer sizes: {layer_sizes}")
+    print(f"Last layer: {last_layer}")
     print(f"Peak memory: {peak_bytes / 1024**3:.3f} GiB")
     print(f"Runtime: {runtime:.3f} seconds")
 
@@ -59,6 +86,12 @@ def run_single_n(k: int, n: int, use_consecutive: bool, device: str):
             "num_layers": len(layer_sizes),
             "layer_sizes": layer_sizes,
             "runtime_sec": runtime,
+            "last_layer": last_layer,
+            "k": k,
+            "n": n,
+            "generator_family": generator_family,
+            "device": device,
+            "central_mode": central_mode,
         }
     )
     wandb.finish()
@@ -68,11 +101,28 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--k", type=int, required=True)
     p.add_argument("--n", type=int, required=True)
-    p.add_argument("--mode", type=str, choices=["consecutive", "wrapped"], default="consecutive")
     p.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cuda")
+    p.add_argument(
+        "--generator_family",
+        type=str,
+        choices=["consecutive", "wrapped"],
+        default="consecutive",
+    )
+    p.add_argument(
+        "--central_mode",
+        type=str,
+        choices=["alternating", "block"],
+        default="block",
+    )
     return p.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run_single_n(args.k, args.n, args.mode == "consecutive", args.device)
+    run_single_n(
+        args.k,
+        args.n,
+        args.generator_family,
+        args.device,
+        args.central_mode,
+    )
