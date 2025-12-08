@@ -24,7 +24,6 @@ from pathlib import Path
 
 # run this from cayleypy/cayleypy/experiments
 root = Path.cwd() / "wandb_logs"
-rows = []
 
 def get_arg(args, flag, cast=str, default=None):
     if flag in args:
@@ -36,13 +35,17 @@ def get_arg(args, flag, cast=str, default=None):
                 return default
     return default
 
-for d in root.iterdir():
+rows_by_key = {}
+
+for d in tqdm(root.iterdir()):
     if not d.is_dir():
+        print(f"Skipping non-directory {d}")
         continue
 
     meta_path = d / "wandb-metadata.json"
     summary_path = d / "wandb-summary.json"
     if not (meta_path.exists() and summary_path.exists()):
+        print(f"Skipping {d} because metadata or summary is missing")
         continue
 
     meta = json.loads(meta_path.read_text())
@@ -53,6 +56,7 @@ for d in root.iterdir():
     mode = get_arg(args, "--mode", str, default="consecutive")
 
     if k is None or n is None or n <= 30:
+        print(f"Skipping {d} because k={k} is missing, and n={n} is missing or too small")
         continue
 
     data = json.loads(summary_path.read_text())
@@ -72,8 +76,15 @@ for d in root.iterdir():
         except Exception:
             pass
 
-    rows.append([k, n, mode, diameter, peak_mem_gib, runtime_sec, cuda_oom, layer_sizes])
+    row = [k, n, mode, diameter, peak_mem_gib, runtime_sec, cuda_oom, layer_sizes]
+    key = (k, n, mode)
 
+    existing = rows_by_key.get(key)
+    # prefer non-OOM; if both OOM or both non-OOM, keep the first
+    if existing is None or (existing[6] and not cuda_oom):
+        rows_by_key[key] = row
+
+rows = list(rows_by_key.values())
 rows.sort(key=lambda r: (r[1], r[0]))  # sort by n, then k
 
 out = Path("diameters_layers.csv")
