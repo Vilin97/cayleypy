@@ -3,19 +3,18 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=100G
 #SBATCH --time=4:00:00
-#SBATCH --array=0-19
+#SBATCH --array=0-9
 #SBATCH --output=logs/%x_%N_%A_%a.out
 
-KS=(2 3)
+KS=(2)
 NS=(32 33 34 35 36)
 GEN_FAMILIES=(consecutive wrapped)
 
 tid=$SLURM_ARRAY_TASK_ID
 
-idx_k=$(( tid / 10 ))          # 2 ks
-rem1=$(( tid % 10 ))
-idx_n=$(( rem1 / 2 ))          # 5 ns
-idx_g=$(( rem1 % 2 ))          # 2 families
+idx_k=0
+idx_n=$(( tid / 2 ))          
+idx_g=$(( tid % 2 ))          
 
 k=${KS[$idx_k]}
 n=${NS[$idx_n]}
