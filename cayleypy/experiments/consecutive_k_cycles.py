@@ -62,6 +62,10 @@ def run_single_n(k: int, n: int, generator_family: str, device: str, central_mod
     diameter = result.diameter()
     layer_sizes = result.layer_sizes
 
+    # Convert last_layer to plain Python + nice string for printing/logging
+    last_layer_list = [list(row) for row in last_layer]
+    last_layer_str = "\n".join(" ".join(map(str, row)) for row in last_layer_list)
+
     if device == "cuda":
         torch.cuda.synchronize()
         peak_bytes = torch.cuda.max_memory_allocated()
@@ -74,7 +78,7 @@ def run_single_n(k: int, n: int, generator_family: str, device: str, central_mod
         f"device={device}, central_mode={central_mode}"
     )
     print(f"n={n}, diameter: {diameter}, layer sizes: {layer_sizes}")
-    print(f"Last layer: {last_layer}")
+    print(f"Last layer:\n{last_layer_str}")
     print(f"Peak memory: {peak_bytes / 1024**3:.3f} GiB")
     print(f"Runtime: {runtime:.3f} seconds")
 
@@ -86,7 +90,9 @@ def run_single_n(k: int, n: int, generator_family: str, device: str, central_mod
             "num_layers": len(layer_sizes),
             "layer_sizes": layer_sizes,
             "runtime_sec": runtime,
-            "last_layer": last_layer,
+            # log as text to avoid histogram
+            "last_layer_str": last_layer_str,
+            "last_layer_list": last_layer_list,
             "k": k,
             "n": n,
             "generator_family": generator_family,
