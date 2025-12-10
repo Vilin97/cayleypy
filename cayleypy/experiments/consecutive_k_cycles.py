@@ -3,7 +3,7 @@
 # 2. wandb login
 # RUN THIS COMMAND TO EXECUTE THE EXPERIMENT:
 # python cayleypy/experiments/consecutive_k_cycles.py --k 7 --n 22 --device cpu --generator_family consecutive --central_mode alternating
-
+# SEE RESULTS: https://wandb.ai/CayleyPy/cycles
 
 import argparse
 import time
