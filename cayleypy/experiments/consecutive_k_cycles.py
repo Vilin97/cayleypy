@@ -5,6 +5,7 @@ import time
 import psutil
 import torch
 import wandb
+import platform
 from cayleypy import CayleyGraph, PermutationGroups
 
 
@@ -34,8 +35,17 @@ def run_single_n(k: int, n: int, generator_family: str, device: str, central_mod
         torch.cuda.reset_peak_memory_stats()
     mem_before = proc.memory_info().rss
 
-    t0 = time.time()
+    # --- hardware info ---
+    if device == "cuda":
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"Hardware: GPU = {gpu_name}")
+    else:
+        cpu_name = platform.processor()
+        cpu_cores = psutil.cpu_count(logical=True)
+        print(f"Hardware: CPU = {cpu_name}, cores = {cpu_cores}")
+    # ---------------------
 
+    t0 = time.time()
     if central_mode == "alternating":
         central = [0, 1] * (n // 2) + [0] * (n - 2 * (n // 2))
     elif central_mode == "block":
