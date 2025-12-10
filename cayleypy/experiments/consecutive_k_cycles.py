@@ -11,7 +11,8 @@ from cayleypy import CayleyGraph, PermutationGroups
 
 def run_single_n(k: int, n: int, generator_family: str, device: str, central_mode: str):
     wandb.init(
-        project="cayley_consecutive_k_cycles",
+        entity="CayleyPy"
+        project="consecutive_cycles",
         name=f"k_{k}_n_{n}_{generator_family}_{central_mode}_{device}",
         config={
             "k": k,
