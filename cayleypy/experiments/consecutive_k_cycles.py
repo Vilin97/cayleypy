@@ -1,4 +1,9 @@
-# "python cayleypy/experiments/consecutive_k_cycles.py --k 7 --n 25 --device cpu --generator_family consecutive --central_mode alternating"
+# RUN THESE TWO COMMANDS ONCE:
+# 1. python -m pip install git+https://github.com/cayleypy/cayleypy torch psutil wandb
+# 2. wandb login
+# RUN THIS COMMAND TO EXECUTE THE EXPERIMENT:
+# python cayleypy/experiments/consecutive_k_cycles.py --k 7 --n 22 --device cpu --generator_family consecutive --central_mode alternating
+
 
 import argparse
 import time
@@ -11,7 +16,7 @@ from cayleypy import CayleyGraph, PermutationGroups
 
 def run_single_n(k: int, n: int, generator_family: str, device: str, central_mode: str):
     wandb.init(
-        entity="CayleyPy"
+        entity="CayleyPy",
         project="cycles",
         name=f"k_{k}_n_{n}_{generator_family}_{central_mode}_{device}",
         config={
