@@ -2,14 +2,14 @@
 #SBATCH --job-name=consecutive_k_cycles
 #SBATCH --account=amath
 #SBATCH --partition=cpu-g2
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=30G
-#SBATCH --time=1:00:00
-#SBATCH --array=0-0
+#SBATCH --cpus-per-task=20
+#SBATCH --mem=300G
+#SBATCH --time=5-00:00:00
+#SBATCH --array=0-9
 #SBATCH --output=logs/%x_%N_%A_%a.out
 
-KS=(6)
-NS=(25)
+KS=(2 3 4 5 8 9 10 11 14 15)
+NS=(37)
 GENERATOR_FAMILY=consecutive
 CENTRAL_MODE=alternating
 DEVICE=cpu

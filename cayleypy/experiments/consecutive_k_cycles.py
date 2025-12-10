@@ -55,7 +55,7 @@ def run_single_n(k: int, n: int, generator_family: str, device: str, central_mod
 
     if generator_family == "consecutive":
         defn = PermutationGroups.consecutive_k_cycles(n, k).with_central_state(central)
-    elif generator_family == "wrapped":
+    elif generator_family == "wrapped_inv":
         defn = (
             PermutationGroups.wrapped_k_cycles(n, k)
             .make_inverse_closed()
