@@ -12,7 +12,7 @@ from cayleypy import CayleyGraph, PermutationGroups
 def run_single_n(k: int, n: int, generator_family: str, device: str, central_mode: str):
     wandb.init(
         entity="CayleyPy"
-        project="consecutive_cycles",
+        project="cycles",
         name=f"k_{k}_n_{n}_{generator_family}_{central_mode}_{device}",
         config={
             "k": k,
