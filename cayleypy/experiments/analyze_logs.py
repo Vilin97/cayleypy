@@ -41,8 +41,8 @@ for r in tqdm(runs):
 # Sort by n, k, generator_family, mode
 rows.sort(
     key=lambda r: (
-        r.get("n"),
         r.get("k"),
+        r.get("n"),
         r.get("generator_family"),
         r.get("mode") or r.get("central_mode"),
     )
@@ -51,8 +51,8 @@ rows.sort(
 all_keys = set().union(*(r.keys() for r in rows))
 
 priority = [
-    "n",
     "k",
+    "n",
     "generator_family",
     "mode",
     "central_mode",
