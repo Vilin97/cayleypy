@@ -53,16 +53,16 @@ all_keys = set().union(*(r.keys() for r in rows))
 priority = [
     "k",
     "n",
+    "diameter",
     "generator_family",
     "mode",
     "central_mode",
-    "device",
-    "diameter",
     "num_layers",
+    "last_layer_str",
+    "device",
     "runtime_sec",
     "peak_memory_gib",
     "peak_memory_bytes",
-    "last_layer_str",
 ]
 
 fieldnames = [p for p in priority if p in all_keys] + sorted(
