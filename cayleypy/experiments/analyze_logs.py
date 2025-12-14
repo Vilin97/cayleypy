@@ -7,7 +7,7 @@ import wandb
 
 api = wandb.Api()
 runs = api.runs("vilin97-uw/cayley_consecutive_k_cycles")
-
+runs_new = api.runs("CayleyPy/cycles")
 
 def normalize_value(v):
     if isinstance(v, (str, int, float, bool)) or v is None:
@@ -20,43 +20,44 @@ def normalize_value(v):
 
 rows = []
 
-for r in tqdm(runs):
+def process_run(r):
     data = dict(r.summary)
-
-    n = data.get("n")
-    k = data.get("k")
-
-    if k is None or n is None or n <= 30:
-        continue
-
     row = {}
     for k2, v2 in data.items():
         if k2 in {"_wandb", "_step", "last_layer_list"}:
             continue
         row[k2] = normalize_value(v2)
+    return row
 
-    rows.append(row)
+print(f"Fetching {len(runs)} old runs and {len(runs_new)} new runs...")
+for r in tqdm(runs):
+    rows.append(process_run(r))
+
+for r in tqdm(runs_new):
+    rows.append(process_run(r))
 
 #%%
-# Sort by n, k, generator_family, mode
+"make a csv"
+
+rows = [r for r in rows if 'n' in r and 'k' in r]
 rows.sort(
     key=lambda r: (
-        r.get("k"),
-        r.get("n"),
         r.get("generator_family"),
         r.get("mode") or r.get("central_mode"),
+        r.get("k"),
+        r.get("n"),
     )
 )
 
 all_keys = set().union(*(r.keys() for r in rows))
 
 priority = [
-    "k",
-    "n",
-    "diameter",
     "generator_family",
     "mode",
     "central_mode",
+    "k",
+    "n",
+    "diameter",
     "num_layers",
     "last_layer_str",
     "device",
