@@ -98,7 +98,10 @@ def run_single_n(
         mem_after = proc.memory_info().rss
         peak_bytes = max(mem_before, mem_after)
 
-    print(f"diameter={diameter} layers={len(layer_sizes)} peak_gib={peak_bytes/1024**3:.3f} runtime_sec={runtime:.3f}")
+    print(f"n={n}, diameter: {diameter}, layer sizes: {layer_sizes}")
+    print(f"Last layer:\n{last_layer_str}")
+    print(f"Peak memory: {peak_bytes / 1024**3:.3f} GiB")
+    print(f"Runtime: {runtime:.3f} seconds")
 
     wandb.log(
         dict(

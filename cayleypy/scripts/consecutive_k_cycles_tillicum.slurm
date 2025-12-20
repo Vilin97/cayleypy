@@ -1,31 +1,25 @@
 #!/bin/bash
 #SBATCH --job-name=consecutive_k_cycles
 #SBATCH --gres=gpu:1
-#SBATCH --mem=100G
-#SBATCH --time=4:00:00
-#SBATCH --array=0-9
+#SBATCH --mem=200G
+#SBATCH --time=24:00:00
+#SBATCH --array=0-2
 #SBATCH --output=logs/%x_%N_%A_%a.out
 
-KS=(2)
-NS=(32 33 34 35 36)
-GEN_FAMILIES=(consecutive wrapped)
+K=6
+NS=(12 13 14)
+
+GENERATOR_FAMILY=consecutive
+DEVICE=cuda
 
 tid=$SLURM_ARRAY_TASK_ID
-
-idx_k=0
-idx_n=$(( tid / 2 ))          
-idx_g=$(( tid % 2 ))          
-
-k=${KS[$idx_k]}
-n=${NS[$idx_n]}
-generator_family=${GEN_FAMILIES[$idx_g]}
+n=${NS[$tid]}
 
 source /gpfs/projects/mathai/vilin/miniconda3/etc/profile.d/conda.sh
 conda activate cayley
 
 srun python3 cayleypy/experiments/consecutive_k_cycles.py \
-  --k "${k}" \
+  --k "${K}" \
   --n "${n}" \
-  --generator_family "${generator_family}" \
-  --central_mode alternating \
-  --device cuda
+  --device "${DEVICE}" \
+  --generator_family "${GENERATOR_FAMILY}"
