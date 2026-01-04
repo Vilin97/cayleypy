@@ -12,34 +12,33 @@ def run_single_n(
     n: int,
     generator_family: str,
     device: str,
-    coset: bool,
-    central_mode: str,
     inverse_closed: bool,
-    coinc: bool,
+    n_coincide: int,
 ):
+    # ---- PARAMETER VALIDATION ----
+    if n_coincide == n:
+        raise ValueError("n_coincide == n collapses the graph to a single state; this case is not supported")
+
+    if not (n_coincide == 0 or 2 <= n_coincide <= n - 1):
+        raise ValueError("n_coincide must be 0 or satisfy 2 <= n_coincide <= n-1")
+
     wandb.init(
         entity="CayleyPy",
         project="cycles",
-        name=(
-            f"k_{k}_n_{n}_{generator_family}_{device}_"
-            f"coset_{int(coset)}_{central_mode if coset else 'full'}_"
-            f"inv_{int(inverse_closed)}_coinc_{int(coinc)}"
-        ),
+        name=(f"k_{k}_n_{n}_{generator_family}_{device}_" f"coinc_{n_coincide}_inv_{int(inverse_closed)}"),
         config={
             "k": k,
             "n": n,
             "generator_family": generator_family,
             "device": device,
-            "coset": coset,
-            "central_mode": central_mode,
             "inverse_closed": inverse_closed,
-            "coinc": coinc,
+            "n_coincide": n_coincide,
         },
     )
 
     print(
         f"Running k={k} n={n} gen={generator_family} device={device} "
-        f"coset={coset} central_mode={central_mode} inverse_closed={inverse_closed} coinc={coinc}"
+        f"inverse_closed={inverse_closed} n_coincide={n_coincide}"
     )
 
     proc = psutil.Process()
@@ -66,19 +65,17 @@ def run_single_n(
     if inverse_closed:
         defn = defn.make_inverse_closed()
 
-    # Best-effort: if your cayleypy exposes this, keep/disable coincidences in the generator set.
-    if not coinc and hasattr(defn, "remove_coincidences"):
-        defn = defn.remove_coincidences()
+    # IMPORTANT: full graph vs coset (implemented via coincide)
+    if n_coincide == 1:
+        raise ValueError("n_coincide = 1 is invalid")
 
-    # IMPORTANT: full graph vs coset
-    if coset:
-        if central_mode == "alternating":
-            central = [0, 1] * (n // 2) + [0] * (n - 2 * (n // 2))
-        elif central_mode == "block":
-            central = [0] * (n // 2) + [1] * (n - n // 2)
-        else:
-            raise ValueError(f"Invalid central_mode: {central_mode}")
+    if n_coincide > n:
+        raise ValueError("n_coincide cannot exceed n")
+
+    if n_coincide >= 2:
+        central = list(range(n - n_coincide)) + [n - n_coincide] * n_coincide
         defn = defn.with_central_state(central)
+    # else: n_coincide == 0 → full graph
 
     graph = CayleyGraph(defn)
     result = graph.bfs(return_all_edges=False, return_all_hashes=False)
@@ -117,10 +114,8 @@ def run_single_n(
             n=n,
             generator_family=generator_family,
             device=device,
-            coset=coset,
-            central_mode=central_mode if coset else None,
+            n_coincide=n_coincide,
             inverse_closed=inverse_closed,
-            coinc=coinc,
         )
     )
     wandb.finish()
@@ -132,22 +127,24 @@ def parse_args():
     p.add_argument("--n", type=int, required=True)
     p.add_argument("--device", choices=["cpu", "cuda"], default="cuda")
     p.add_argument("--generator_family", choices=["consecutive", "wrapped"], default="consecutive")
-    p.add_argument("--coset", action="store_true", help="restrict to a coset via a central state")
-    p.add_argument("--central_mode", choices=["alternating", "block"], default="block")
     p.add_argument("--inverse_closed", action="store_true")
-    p.add_argument("--coinc", action="store_true", help="allow coincident generators (if supported)")
-    return p.parse_args()
+    p.add_argument("--n_coincide", type=int, default=0, help="0 = full graph; >=2 = coincide coset")
+    args = p.parse_args()
+    if args.n_coincide == 1:
+        raise ValueError("n_coincide=1 is invalid")
+    return args
 
 
 if __name__ == "__main__":
     a = parse_args()
+    print("ARGS RAW:", a)
+    print("ARGS VALUES:", a.k, a.n, a.n_coincide)
+
     run_single_n(
         a.k,
         a.n,
         a.generator_family,
         a.device,
-        a.coset,
-        a.central_mode,
         a.inverse_closed,
-        a.coinc,
+        a.n_coincide,
     )
