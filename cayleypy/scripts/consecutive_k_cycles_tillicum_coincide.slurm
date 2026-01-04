@@ -2,7 +2,7 @@
 #SBATCH --job-name=cycles_k2_6_n13_14
 #SBATCH --gres=gpu:1
 #SBATCH --mem=200G
-#SBATCH --time=24:00:00
+#SBATCH --time=1:00:00
 #SBATCH --array=0-119
 #SBATCH --output=logs/%x_%N_%A_%a.out
 
