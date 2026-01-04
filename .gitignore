@@ -9,6 +9,10 @@ htmlcov/
 .venv/
 venv/
 dist/
+logs/
+wandb/
+wandb_logs/
+*.csv
 
 # Sphinx
 docs/_build
