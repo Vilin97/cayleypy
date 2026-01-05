@@ -1,4 +1,4 @@
-#%%
+# %%
 """Fetch all wandb summaries via API and save everything to CSV."""
 import json, csv
 from pathlib import Path
@@ -6,8 +6,9 @@ from tqdm import tqdm
 import wandb
 
 api = wandb.Api()
-runs = api.runs("vilin97-uw/cayley_consecutive_k_cycles")
+runs_old = api.runs("vilin97-uw/cayley_consecutive_k_cycles")
 runs_new = api.runs("CayleyPy/cycles")
+
 
 def normalize_value(v):
     if isinstance(v, (str, int, float, bool)) or v is None:
@@ -18,34 +19,36 @@ def normalize_value(v):
         return repr(v)
 
 
-rows = []
-
 def process_run(r):
     data = dict(r.summary)
     row = {}
-    for k2, v2 in data.items():
-        if k2 in {"_wandb", "_step", "last_layer_list"}:
+    for k, v in data.items():
+        if k in {"_wandb", "_step", "last_layer_list"}:
             continue
-        row[k2] = normalize_value(v2)
+        row[k] = normalize_value(v)
     return row
 
-print(f"Fetching {len(runs)} old runs and {len(runs_new)} new runs...")
-for r in tqdm(runs):
+
+rows = []
+
+print(f"Fetching {len(runs_old)} old runs and {len(runs_new)} new runs...")
+for r in tqdm(runs_old):
     rows.append(process_run(r))
 
 for r in tqdm(runs_new):
     rows.append(process_run(r))
 
-#%%
-"make a csv"
+# %%
+# keep only valid experiment rows
+rows = [r for r in rows if "k" in r and "n" in r]
 
-rows = [r for r in rows if 'n' in r and 'k' in r]
+# sort by the new experiment structure
 rows.sort(
     key=lambda r: (
         r.get("generator_family"),
-        r.get("mode") or r.get("central_mode"),
         r.get("k"),
         r.get("n"),
+        r.get("n_coincide", 0),
     )
 )
 
@@ -53,10 +56,10 @@ all_keys = set().union(*(r.keys() for r in rows))
 
 priority = [
     "generator_family",
-    "mode",
-    "central_mode",
     "k",
     "n",
+    "n_coincide",
+    "inverse_closed",
     "diameter",
     "num_layers",
     "last_layer_str",
@@ -66,9 +69,7 @@ priority = [
     "peak_memory_bytes",
 ]
 
-fieldnames = [p for p in priority if p in all_keys] + sorted(
-    k for k in all_keys if k not in priority
-)
+fieldnames = [p for p in priority if p in all_keys] + sorted(k for k in all_keys if k not in priority)
 
 out = Path("diameters_layers.csv")
 with out.open("w", newline="") as f:
@@ -78,5 +79,3 @@ with out.open("w", newline="") as f:
         w.writerow(r)
 
 print(f"Wrote {len(rows)} rows to {out}")
-
-# %%
