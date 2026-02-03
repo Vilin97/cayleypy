@@ -42,10 +42,10 @@ for r in tqdm(runs_new):
 rows = [r for r in rows if 'n' in r and 'k' in r]
 rows.sort(
     key=lambda r: (
-        r.get("generator_family"),
-        r.get("mode") or r.get("central_mode"),
-        r.get("k"),
-        r.get("n"),
+        r.get("generator_family") or "",
+        r.get("mode") or r.get("central_mode") or "",
+        r.get("k") or 0,
+        r.get("n") or 0,
     )
 )
 
