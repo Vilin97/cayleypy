@@ -13,6 +13,7 @@ logs/
 wandb/
 wandb_logs/
 *.csv
+*.json
 
 # Sphinx
 docs/_build

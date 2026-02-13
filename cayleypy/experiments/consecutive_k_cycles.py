@@ -48,9 +48,12 @@ def run_single_n(
     mem_before = proc.memory_info().rss
 
     if device == "cuda":
-        print(f"Hardware: GPU = {torch.cuda.get_device_name(0)}")
+        hardware_name = torch.cuda.get_device_name(0)
+        print(f"Hardware: GPU = {hardware_name}")
     else:
-        print(f"Hardware: CPU = {platform.processor()}, cores = {psutil.cpu_count(logical=True)}")
+        hardware_name = f"{platform.processor()}, {psutil.cpu_count(logical=True)} cores"
+        print(f"Hardware: CPU = {hardware_name}")
+    wandb.config.update({"hardware_name": hardware_name})
 
     t0 = time.time()
 
