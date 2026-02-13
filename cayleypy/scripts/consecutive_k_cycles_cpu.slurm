@@ -1,59 +1,35 @@
 #!/bin/bash
-#SBATCH --job-name=all_k_cycles_cpu
-#SBATCH --account=amath
-#SBATCH --partition=cpu-g2
-#SBATCH --cpus-per-task=20
-#SBATCH --mem=300G
-#SBATCH --time=5-00:00:00
-#SBATCH --array=0-83
+#SBATCH --job-name=consecutive_k_cycles_cpu
+#SBATCH --account=stf
+#SBATCH --partition=cpu-g2-mem2x
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=350G
+#SBATCH --time=10-00:00:00
+#SBATCH --array=0-9
 #SBATCH --output=logs/%x_%N_%A_%a.out
 
-# Combined job for all configurations:
-# 1. consecutive + inverse_closed: k=2-15, n=37,38 (28 jobs: indices 0-27)
-# 2. wrapped + inverse_closed: k=2-15, n=37,38 (28 jobs: indices 28-55)
-# 3. wrapped + no inverse: k=2-15, n=37,38 (28 jobs: indices 56-83)
-# Total: 84 jobs
+K=10
+NS=(34 35 36 37 38)
+INVERSE_CLOSED_OPTS=(True False)
 
-KS=(2 3 4 5 6 7 8 9 10 11 12 13 14 15)
-NS=(37 38)
-
+GENERATOR_FAMILY=consecutive
 DEVICE=cpu
 
 tid=$SLURM_ARRAY_TASK_ID
-
-# Determine configuration based on task ID
-if [ $tid -lt 28 ]; then
-    # consecutive + inverse_closed (indices 0-27)
-    GENERATOR_FAMILY=consecutive
-    INVERSE_CLOSED="--inverse_closed"
-    config_tid=$tid
-elif [ $tid -lt 56 ]; then
-    # wrapped + inverse_closed (indices 28-55)
-    GENERATOR_FAMILY=wrapped
-    INVERSE_CLOSED="--inverse_closed"
-    config_tid=$((tid - 28))
-else
-    # wrapped + no inverse (indices 56-83)
-    GENERATOR_FAMILY=wrapped
-    INVERSE_CLOSED=""
-    config_tid=$((tid - 56))
-fi
-
-# Calculate k and n indices within each configuration
-k_idx=$((config_tid / 2))
-n_idx=$((config_tid % 2))
-
-k=${KS[$k_idx]}
+num_n=${#NS[@]}
+ic_idx=$((tid / num_n))
+n_idx=$((tid % num_n))
 n=${NS[$n_idx]}
+inverse_closed=${INVERSE_CLOSED_OPTS[$ic_idx]}
 
 source /gscratch/amath/vilin/conda/etc/profile.d/conda.sh
 conda activate cayley
 
 srun python3 cayleypy/experiments/consecutive_k_cycles.py \
-  --k "${k}" \
+  --k "${K}" \
   --n "${n}" \
   --device "${DEVICE}" \
   --generator_family "${GENERATOR_FAMILY}" \
-  --coset \
+  --coset True \
   --central_mode block \
-  ${INVERSE_CLOSED}
+  --inverse_closed "${inverse_closed}"
