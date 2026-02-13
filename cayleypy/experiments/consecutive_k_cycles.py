@@ -121,13 +121,20 @@ def run_single_n(
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--k", type=int, required=True)
-    p.add_argument("--n", type=int, required=True)
-    p.add_argument("--device", choices=["cpu", "cuda"], default="cuda")
-    p.add_argument("--generator_family", choices=["consecutive", "wrapped"], default="consecutive")
-    p.add_argument("--coset", action="store_true", help="restrict to a coset via a central state")
-    p.add_argument("--central_mode", choices=["alternating", "block"], default="block")
-    p.add_argument("--inverse_closed", action="store_true")
+    p.add_argument("--k", type=int, required=True,
+                   help="cycle length for the generators")
+    p.add_argument("--n", type=int, required=True,
+                   help="number of elements being permuted (group is S_n or a coset thereof)")
+    p.add_argument("--device", choices=["cpu", "cuda"], default="cuda",
+                   help="compute device for BFS (default: cuda)")
+    p.add_argument("--generator_family", choices=["consecutive", "wrapped"], default="consecutive",
+                   help="'consecutive' uses k-cycles on adjacent elements (1..k, 2..k+1, ...); 'wrapped' wraps around so position n connects to position 1 (default: consecutive)")
+    p.add_argument("--coset", type={"True": True, "False": False}.__getitem__, default=True,
+                   help="if True, restrict to a coset via a central state coloring, reducing the graph from n! to C(n, n/2) vertices; if False, BFS the full Cayley graph (default: True)")
+    p.add_argument("--central_mode", choices=["alternating", "block"], default="block",
+                   help="how to color positions for the coset: 'block' puts first half as 0 and second half as 1; 'alternating' interleaves 0,1,0,1,... Only used when --coset True (default: block)")
+    p.add_argument("--inverse_closed", type={"True": True, "False": False}.__getitem__, default=False,
+                   help="if True, add the inverse of each generator to the generating set, making the Cayley graph undirected (default: False)")
     return p.parse_args()
 
 
