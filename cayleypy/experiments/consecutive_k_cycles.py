@@ -15,7 +15,6 @@ def run_single_n(
     coset: bool,
     central_mode: str,
     inverse_closed: bool,
-    coinc: bool,
 ):
     wandb.init(
         entity="CayleyPy",
@@ -23,7 +22,7 @@ def run_single_n(
         name=(
             f"k_{k}_n_{n}_{generator_family}_{device}_"
             f"coset_{int(coset)}_{central_mode if coset else 'full'}_"
-            f"inv_{int(inverse_closed)}_coinc_{int(coinc)}"
+            f"inv_{int(inverse_closed)}"
         ),
         config={
             "k": k,
@@ -33,13 +32,12 @@ def run_single_n(
             "coset": coset,
             "central_mode": central_mode,
             "inverse_closed": inverse_closed,
-            "coinc": coinc,
         },
     )
 
     print(
         f"Running k={k} n={n} gen={generator_family} device={device} "
-        f"coset={coset} central_mode={central_mode} inverse_closed={inverse_closed} coinc={coinc}"
+        f"coset={coset} central_mode={central_mode} inverse_closed={inverse_closed}"
     )
 
     proc = psutil.Process()
@@ -65,10 +63,6 @@ def run_single_n(
 
     if inverse_closed:
         defn = defn.make_inverse_closed()
-
-    # Best-effort: if your cayleypy exposes this, keep/disable coincidences in the generator set.
-    if not coinc and hasattr(defn, "remove_coincidences"):
-        defn = defn.remove_coincidences()
 
     # IMPORTANT: full graph vs coset
     if coset:
@@ -120,7 +114,6 @@ def run_single_n(
             coset=coset,
             central_mode=central_mode if coset else None,
             inverse_closed=inverse_closed,
-            coinc=coinc,
         )
     )
     wandb.finish()
@@ -135,7 +128,6 @@ def parse_args():
     p.add_argument("--coset", action="store_true", help="restrict to a coset via a central state")
     p.add_argument("--central_mode", choices=["alternating", "block"], default="block")
     p.add_argument("--inverse_closed", action="store_true")
-    p.add_argument("--coinc", action="store_true", help="allow coincident generators (if supported)")
     return p.parse_args()
 
 
@@ -149,5 +141,4 @@ if __name__ == "__main__":
         a.coset,
         a.central_mode,
         a.inverse_closed,
-        a.coinc,
     )
