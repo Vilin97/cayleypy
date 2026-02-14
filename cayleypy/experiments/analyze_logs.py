@@ -115,7 +115,7 @@ def fetch_rows():
         print(f"Backfilling hardware_name for {len(need_backfill)} rows...")
         run_id_to_row = {r["run_id"]: r for r in need_backfill}
         for project in PROJECTS:
-            for r in api.runs(project):
+            for r in tqdm(api.runs(project), desc=f"Backfilling {project}"):
                 if r.id in run_id_to_row and not run_id_to_row[r.id].get("hardware_name"):
                     hw = parse_hardware_from_log(r)
                     if hw:
