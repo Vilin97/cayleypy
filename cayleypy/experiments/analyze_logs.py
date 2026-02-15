@@ -104,9 +104,16 @@ def fetch_rows():
             print(f"{project}: all {len(all_runs)} runs cached")
             continue
         print(f"{project}: fetching {len(new_runs)} new runs ({len(all_runs) - len(new_runs)} cached)")
+        skipped = 0
         for r in tqdm(new_runs):
-            rows.append(process_run(r))
+            row = process_run(r)
+            if row.get("diameter") is None:
+                skipped += 1
+                continue  # failed or still running — don't cache
+            rows.append(row)
             seen.add(r.id)
+        if skipped:
+            print(f"  skipped {skipped} runs without diameter (failed/running)")
         dirty = True
 
     # Backfill hardware_name for cached rows missing it
