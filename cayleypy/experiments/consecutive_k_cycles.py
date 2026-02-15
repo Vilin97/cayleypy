@@ -15,6 +15,7 @@ def run_single_n(
     coset: bool,
     central_mode: str,
     inverse_closed: bool,
+    num_gpus: int = 0,
 ):
     wandb.init(
         entity="CayleyPy",
@@ -32,12 +33,17 @@ def run_single_n(
             "coset": coset,
             "central_mode": central_mode,
             "inverse_closed": inverse_closed,
+            "num_gpus": num_gpus,
         },
     )
 
+    if num_gpus == 0 and device == "cuda" and torch.cuda.is_available():
+        num_gpus = torch.cuda.device_count()
+
     print(
         f"Running k={k} n={n} gen={generator_family} device={device} "
-        f"coset={coset} central_mode={central_mode} inverse_closed={inverse_closed}"
+        f"coset={coset} central_mode={central_mode} inverse_closed={inverse_closed} "
+        f"num_gpus={num_gpus}"
     )
 
     proc = psutil.Process()
@@ -77,7 +83,7 @@ def run_single_n(
             raise ValueError(f"Invalid central_mode: {central_mode}")
         defn = defn.with_central_state(central)
 
-    graph = CayleyGraph(defn)
+    graph = CayleyGraph(defn, device=device, num_gpus=num_gpus)
     result = graph.bfs(return_all_edges=False, return_all_hashes=False)
 
     last_layer = result.last_layer()
@@ -90,14 +96,21 @@ def run_single_n(
 
     if device == "cuda":
         torch.cuda.synchronize()
-        peak_bytes = torch.cuda.max_memory_allocated()
+        peak_bytes = torch.cuda.max_memory_allocated(0)
+        peak_per_gpu = {}
+        for i in range(min(num_gpus, torch.cuda.device_count())):
+            peak_per_gpu[i] = torch.cuda.max_memory_allocated(i)
     else:
         mem_after = proc.memory_info().rss
         peak_bytes = max(mem_before, mem_after)
+        peak_per_gpu = {}
 
     print(f"n={n}, diameter: {diameter}, layer sizes: {layer_sizes}")
     print(f"Last layer:\n{last_layer_str}")
-    print(f"Peak memory: {peak_bytes / 1024**3:.3f} GiB")
+    print(f"Peak memory GPU0: {peak_bytes / 1024**3:.3f} GiB")
+    if num_gpus > 1 and peak_per_gpu:
+        per_gpu_str = ", ".join(f"GPU{i}={v / 1024**3:.3f}" for i, v in sorted(peak_per_gpu.items()))
+        print(f"Peak memory per-GPU: {per_gpu_str}")
     print(f"Runtime: {runtime:.3f} seconds")
 
     wandb.log(
@@ -108,6 +121,7 @@ def run_single_n(
             runtime_sec=runtime,
             peak_memory_bytes=peak_bytes,
             peak_memory_gib=peak_bytes / 1024**3,
+            peak_per_gpu_gib={str(i): v / 1024**3 for i, v in peak_per_gpu.items()} if peak_per_gpu else None,
             last_layer_str=last_layer_str,
             last_layer_list=last_layer_list,
             k=k,
@@ -117,6 +131,7 @@ def run_single_n(
             coset=coset,
             central_mode=central_mode if coset else None,
             inverse_closed=inverse_closed,
+            num_gpus=num_gpus,
         )
     )
     wandb.finish()
@@ -131,6 +146,7 @@ def parse_args():
     p.add_argument("--coset", type={"True": True, "False": False}.__getitem__, default=True, help="if True, restrict to a coset via a central state coloring, reducing the graph from n! to C(n, n/2) vertices; if False, BFS the full Cayley graph (default: True)")
     p.add_argument("--central_mode", choices=["alternating", "block"], default="block", help="how to color positions for the coset: 'block' puts first half as 0 and second half as 1; 'alternating' interleaves 0,1,0,1,... Only used when --coset True (default: block)")
     p.add_argument("--inverse_closed", type={"True": True, "False": False}.__getitem__, default=False, help="if True, add the inverse of each generator to the generating set, making the Cayley graph undirected (default: False)")
+    p.add_argument("--num_gpus", type=int, default=0, help="number of GPUs for distributed BFS (0 = all available, 1 = single GPU, default: 0)")
     return p.parse_args()
 
 
@@ -144,4 +160,5 @@ if __name__ == "__main__":
         a.coset,
         a.central_mode,
         a.inverse_closed,
+        a.num_gpus,
     )
