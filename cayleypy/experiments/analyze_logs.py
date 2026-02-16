@@ -15,7 +15,7 @@ CACHE_PATH = Path(__file__).with_name(".wandb_cache.json")
 PROJECTS = ["vilin97-uw/cayley_consecutive_k_cycles", "CayleyPy/cycles"]
 
 PARAM_KEYS = ["k", "n", "generator_family", "device", "coset", "central_mode", "inverse_closed", "hardware_name", "num_gpus"]
-RESULT_KEYS = ["diameter", "num_layers", "layer_sizes", "runtime_sec", "peak_memory_gib", "peak_memory_bytes", "peak_per_gpu_gib", "last_layer_str"]
+RESULT_KEYS = ["diameter", "num_layers", "layer_sizes", "runtime_sec", "peak_memory_gib", "peak_memory_bytes", "peak_memory_total_bytes", "peak_memory_total_gib", "peak_per_gpu_gib", "last_layer_str"]
 
 
 def normalize_value(v):
@@ -148,6 +148,8 @@ def fetch_rows():
                     cached["num_gpus"] = summ["num_gpus"]
                 if cached.get("peak_per_gpu_gib") is None and "peak_per_gpu_gib" in summ:
                     cached["peak_per_gpu_gib"] = summ["peak_per_gpu_gib"]
+                if cached.get("peak_memory_total_bytes") is None and "peak_memory_total_bytes" in summ:
+                    cached["peak_memory_total_bytes"] = summ["peak_memory_total_bytes"]
                 backfilled_ids.add(r.id)
         dirty = True
 
@@ -178,20 +180,11 @@ def format_timestamp(ts):
         return ts
 
 
-def total_memory_gb(r):
-    """Compute total memory across all GPUs in GB.
-
-    Uses peak_per_gpu_gib (sum of all GPUs) when available,
-    otherwise falls back to peak_memory_bytes (GPU 0 only).
-    """
-    per_gpu = r.get("peak_per_gpu_gib")
-    if per_gpu and isinstance(per_gpu, dict):
-        total_gib = sum(float(v) for v in per_gpu.values())
-        return round(total_gib * 1024**3 / 1e9, 2)  # GiB -> GB
-    peak_bytes = r.get("peak_memory_bytes")
+def format_memory_gb(peak_bytes):
+    """Format bytes as GB string with 3 decimals."""
     if peak_bytes is None:
         return ""
-    return round(peak_bytes / 1e9, 2)
+    return f"{peak_bytes / 1e9:.3f}"
 
 
 def sort_key(r):
@@ -218,7 +211,8 @@ def format_row(r):
     out["device"] = r.get("device", "")
     out["hardware_name"] = r.get("hardware_name", "")
     out["runtime"] = format_runtime(r.get("runtime_sec"))
-    out["peak_memory_gb"] = total_memory_gb(r)
+    out["peak_memory_gb"] = format_memory_gb(r.get("peak_memory_bytes"))
+    out["peak_memory_total_gb"] = format_memory_gb(r.get("peak_memory_total_bytes"))
     out["timestamp"] = format_timestamp(r.get("created_at"))
     out["layer_sizes"] = r.get("layer_sizes", "")
     out["last_layer_str"] = r.get("last_layer_str", "")
@@ -226,7 +220,8 @@ def format_row(r):
     # Everything else
     skip = {"coset", "generator_family", "central_mode", "inverse_closed", "k", "n",
             "diameter", "device", "hardware_name", "runtime_sec", "peak_memory_bytes",
-            "peak_memory_gib", "peak_per_gpu_gib", "created_at", "layer_sizes", "last_layer_str"}
+            "peak_memory_gib", "peak_memory_total_bytes", "peak_memory_total_gib",
+            "peak_per_gpu_gib", "created_at", "layer_sizes", "last_layer_str"}
     for key, val in r.items():
         if key not in skip:
             out[key] = val
@@ -255,6 +250,7 @@ priority = [
     "hardware_name",
     "runtime",
     "peak_memory_gb",
+    "peak_memory_total_gb",
     "timestamp",
     "layer_sizes",
     "last_layer_str",
