@@ -94,16 +94,22 @@ else
     declare -a FREE_CANDIDATES=()
     declare -a TOTAL_CANDIDATES=()
 
+    cur_acct=""
+    cur_part=""
     while IFS='│' read -r _ acct part cpus mem gpus status _; do
         acct=$(echo "$acct" | xargs)
         part=$(echo "$part" | xargs)
         gpus=$(echo "$gpus" | xargs)
         status=$(echo "$status" | xargs)
 
-        [[ ! "$part" =~ ^gpu- ]] && continue
+        # Carry forward account/partition from the TOTAL row.
+        [[ -n "$acct" ]] && cur_acct="$acct"
+        [[ -n "$part" ]] && cur_part="$part"
+
+        [[ ! "$cur_part" =~ ^gpu- ]] && continue
         [[ -z "$gpus" || "$gpus" == "0" ]] && continue
 
-        VRAM_PER_GPU=${GPU_VRAM[$part]:-0}
+        VRAM_PER_GPU=${GPU_VRAM[$cur_part]:-0}
         [[ "$VRAM_PER_GPU" -eq 0 ]] && continue
 
         num_gpus=$((gpus))
@@ -112,9 +118,9 @@ else
         if [[ "$total_vram" -ge "$MIN_VRAM" ]]; then
             needed=$(( (MIN_VRAM + VRAM_PER_GPU - 1) / VRAM_PER_GPU ))
             if [[ "$status" == "FREE" ]]; then
-                FREE_CANDIDATES+=("${acct}|${part}|${needed}|${VRAM_PER_GPU}")
+                FREE_CANDIDATES+=("${cur_acct}|${cur_part}|${needed}|${VRAM_PER_GPU}")
             elif [[ "$status" == "TOTAL" ]]; then
-                TOTAL_CANDIDATES+=("${acct}|${part}|${needed}|${VRAM_PER_GPU}")
+                TOTAL_CANDIDATES+=("${cur_acct}|${cur_part}|${needed}|${VRAM_PER_GPU}")
             fi
         fi
     done < <(hyakalloc 2>/dev/null | grep "│")
