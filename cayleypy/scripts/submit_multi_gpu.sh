@@ -6,14 +6,15 @@
 #
 # Usage:
 #   ./cayleypy/scripts/submit_multi_gpu.sh --k 10 --n 35
-#   ./cayleypy/scripts/submit_multi_gpu.sh --k 10 --n 35 --min_vram 200
-#   ./cayleypy/scripts/submit_multi_gpu.sh --k 10 --n 37 --min_vram 400 --time 24:00:00
+#   ./cayleypy/scripts/submit_multi_gpu.sh --k 10 --n 35 --min_vram 70
+#   ./cayleypy/scripts/submit_multi_gpu.sh --k 10 --n 37 --min_vram 280 --time 24:00:00
+#   ./cayleypy/scripts/submit_multi_gpu.sh --k 10 --n 38 --min_vram 520 --time 24:00:00
 #   ./cayleypy/scripts/submit_multi_gpu.sh --k 10 --n 35 --account amath --partition gpu-rtx6k
 
 set -euo pipefail
 
 # --- Defaults ---
-MIN_VRAM=192          # minimum total GPU VRAM in GB
+MIN_VRAM=192          # minimum total GPU VRAM in GB, there is 192Gb in the 8 rtx6k GPUs for the amath account, partition gpu-rtx6k
 K=""
 N=""
 ACCOUNT=""
