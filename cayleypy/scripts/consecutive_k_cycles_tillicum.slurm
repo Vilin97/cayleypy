@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=k10_n38_4gpu
+#SBATCH --account=mathai
 #SBATCH --gres=gpu:4
 #SBATCH --mem=200G
 #SBATCH --time=12:00:00
