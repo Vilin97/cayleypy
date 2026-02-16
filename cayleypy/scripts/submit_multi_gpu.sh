@@ -87,7 +87,7 @@ else
     echo "Searching for a partition with >= ${MIN_VRAM} GB total GPU VRAM..."
 
     # Preferred accounts in priority order.
-    PREFERRED_ACCOUNTS=(amath stf cse krishna)
+    PREFERRED_ACCOUNTS=(amath krishna cse stf)
 
     # Collect candidates from FREE rows (available now) and TOTAL rows (for queuing).
     declare -a FREE_CANDIDATES=()
