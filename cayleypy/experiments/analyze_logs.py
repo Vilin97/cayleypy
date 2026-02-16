@@ -14,8 +14,8 @@ import wandb
 CACHE_PATH = Path(__file__).with_name(".wandb_cache.json")
 PROJECTS = ["vilin97-uw/cayley_consecutive_k_cycles", "CayleyPy/cycles"]
 
-PARAM_KEYS = ["k", "n", "generator_family", "device", "coset", "central_mode", "inverse_closed", "hardware_name"]
-RESULT_KEYS = ["diameter", "num_layers", "layer_sizes", "runtime_sec", "peak_memory_gib", "peak_memory_bytes", "last_layer_str"]
+PARAM_KEYS = ["k", "n", "generator_family", "device", "coset", "central_mode", "inverse_closed", "hardware_name", "num_gpus"]
+RESULT_KEYS = ["diameter", "num_layers", "layer_sizes", "runtime_sec", "peak_memory_gib", "peak_memory_bytes", "peak_per_gpu_gib", "last_layer_str"]
 
 
 def normalize_value(v):
@@ -81,58 +81,78 @@ def process_run(r):
 def load_cache():
     if CACHE_PATH.exists():
         with CACHE_PATH.open() as f:
-            return json.load(f)
-    return {"rows": [], "seen_run_ids": []}
+            data = json.load(f)
+        data.setdefault("skipped_run_ids", [])
+        data.setdefault("backfilled_run_ids", [])
+        return data
+    return {"rows": [], "seen_run_ids": [], "skipped_run_ids": [], "backfilled_run_ids": []}
 
 
-def save_cache(rows, seen_run_ids):
-    with CACHE_PATH.open("w") as f:
-        json.dump({"rows": rows, "seen_run_ids": sorted(seen_run_ids)}, f)
+def save_cache(rows, seen_run_ids, skipped_run_ids, backfilled_run_ids):
+    tmp = CACHE_PATH.with_suffix(".tmp")
+    with tmp.open("w") as f:
+        json.dump({
+            "rows": rows,
+            "seen_run_ids": sorted(seen_run_ids),
+            "skipped_run_ids": sorted(skipped_run_ids),
+            "backfilled_run_ids": sorted(backfilled_run_ids),
+        }, f)
+    tmp.rename(CACHE_PATH)
 
 
 def fetch_rows():
     cache = load_cache()
     rows = list(cache["rows"])
     seen = set(cache["seen_run_ids"])
+    skipped_ids = set(cache["skipped_run_ids"])
+    backfilled_ids = set(cache["backfilled_run_ids"])
     dirty = False
 
     api = wandb.Api(timeout=30)
     for project in PROJECTS:
         all_runs = api.runs(project)
-        new_runs = [r for r in all_runs if r.id not in seen]
+        new_runs = [r for r in all_runs if r.id not in seen and r.id not in skipped_ids]
         if not new_runs:
             print(f"{project}: all {len(all_runs)} runs cached")
             continue
         print(f"{project}: fetching {len(new_runs)} new runs ({len(all_runs) - len(new_runs)} cached)")
-        skipped = 0
+        n_skipped = 0
         for r in tqdm(new_runs):
             row = process_run(r)
             if row.get("diameter") is None:
-                skipped += 1
+                n_skipped += 1
+                skipped_ids.add(r.id)
                 continue  # failed or still running — don't cache
             rows.append(row)
             seen.add(r.id)
-        if skipped:
-            print(f"  skipped {skipped} runs without diameter (failed/running)")
+        if n_skipped:
+            print(f"  skipped {n_skipped} runs without diameter (failed/running)")
         dirty = True
 
-    # Backfill hardware_name for cached rows missing it
-    need_backfill = [r for r in rows if not r.get("hardware_name")]
+    # Backfill hardware_name, num_gpus, peak_per_gpu_gib for cached rows not yet attempted
+    need_backfill = [r for r in rows if r["run_id"] not in backfilled_ids]
     if need_backfill:
-        print(f"Backfilling hardware_name for {len(need_backfill)} rows...")
+        print(f"Backfilling {len(need_backfill)} rows...")
         run_id_to_row = {r["run_id"]: r for r in need_backfill}
         for project in PROJECTS:
             for r in tqdm(api.runs(project), desc=f"Backfilling {project}"):
-                if r.id in run_id_to_row and not run_id_to_row[r.id].get("hardware_name"):
+                if r.id not in run_id_to_row:
+                    continue
+                cached = run_id_to_row[r.id]
+                if not cached.get("hardware_name"):
                     hw = parse_hardware_from_log(r)
                     if hw:
-                        run_id_to_row[r.id]["hardware_name"] = hw
-                        dirty = True
-        filled = sum(1 for r in need_backfill if r.get("hardware_name"))
-        print(f"  filled {filled}/{len(need_backfill)} rows")
+                        cached["hardware_name"] = hw
+                summ = dict(r.summary)
+                if cached.get("num_gpus") is None and "num_gpus" in summ:
+                    cached["num_gpus"] = summ["num_gpus"]
+                if cached.get("peak_per_gpu_gib") is None and "peak_per_gpu_gib" in summ:
+                    cached["peak_per_gpu_gib"] = summ["peak_per_gpu_gib"]
+                backfilled_ids.add(r.id)
+        dirty = True
 
     if dirty:
-        save_cache(rows, seen)
+        save_cache(rows, seen, skipped_ids, backfilled_ids)
     return rows
 
 
@@ -158,8 +178,17 @@ def format_timestamp(ts):
         return ts
 
 
-def format_memory_gb(peak_bytes):
-    """Format bytes as GB rounded to 2 decimals."""
+def total_memory_gb(r):
+    """Compute total memory across all GPUs in GB.
+
+    Uses peak_per_gpu_gib (sum of all GPUs) when available,
+    otherwise falls back to peak_memory_bytes (GPU 0 only).
+    """
+    per_gpu = r.get("peak_per_gpu_gib")
+    if per_gpu and isinstance(per_gpu, dict):
+        total_gib = sum(float(v) for v in per_gpu.values())
+        return round(total_gib * 1024**3 / 1e9, 2)  # GiB -> GB
+    peak_bytes = r.get("peak_memory_bytes")
     if peak_bytes is None:
         return ""
     return round(peak_bytes / 1e9, 2)
@@ -189,7 +218,7 @@ def format_row(r):
     out["device"] = r.get("device", "")
     out["hardware_name"] = r.get("hardware_name", "")
     out["runtime"] = format_runtime(r.get("runtime_sec"))
-    out["peak_memory_gb"] = format_memory_gb(r.get("peak_memory_bytes"))
+    out["peak_memory_gb"] = total_memory_gb(r)
     out["timestamp"] = format_timestamp(r.get("created_at"))
     out["layer_sizes"] = r.get("layer_sizes", "")
     out["last_layer_str"] = r.get("last_layer_str", "")
@@ -197,7 +226,7 @@ def format_row(r):
     # Everything else
     skip = {"coset", "generator_family", "central_mode", "inverse_closed", "k", "n",
             "diameter", "device", "hardware_name", "runtime_sec", "peak_memory_bytes",
-            "peak_memory_gib", "created_at", "layer_sizes", "last_layer_str"}
+            "peak_memory_gib", "peak_per_gpu_gib", "created_at", "layer_sizes", "last_layer_str"}
     for key, val in r.items():
         if key not in skip:
             out[key] = val
