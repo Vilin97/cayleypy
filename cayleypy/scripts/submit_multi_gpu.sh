@@ -73,7 +73,7 @@ if [[ -n "$ACCOUNT" && -n "$PARTITION" ]]; then
     NUM_GPUS=$(( (MIN_VRAM + VRAM_PER_GPU - 1) / VRAM_PER_GPU ))
 
     # Check free GPUs from hyakalloc.
-    FREE_GPUS=$(hyakalloc -a 2>/dev/null | grep -A2 "│ *${ACCOUNT} *│ *${PARTITION} *│" \
+    FREE_GPUS=$(hyakalloc 2>/dev/null | grep -A2 "│ *${ACCOUNT} *│ *${PARTITION} *│" \
         | grep "FREE" | awk -F'│' '{print $5}' | tr -d ' ')
     if [[ -z "$FREE_GPUS" ]]; then
         FREE_GPUS=0
@@ -89,75 +89,84 @@ else
     # Preferred accounts in priority order.
     PREFERRED_ACCOUNTS=(amath stf cse krishna)
 
-    # Collect all candidates: (account, partition, needed_gpus, vram_per_gpu)
-    declare -a CANDIDATES=()
+    # Collect candidates from FREE rows (available now) and TOTAL rows (for queuing).
+    declare -a FREE_CANDIDATES=()
+    declare -a TOTAL_CANDIDATES=()
 
-    # Parse hyakalloc output: look for FREE lines with GPUs > 0.
     while IFS='│' read -r _ acct part cpus mem gpus status _; do
         acct=$(echo "$acct" | xargs)
         part=$(echo "$part" | xargs)
         gpus=$(echo "$gpus" | xargs)
         status=$(echo "$status" | xargs)
 
-        # Only look at FREE rows with GPU partitions.
-        [[ "$status" != "FREE" ]] && continue
         [[ ! "$part" =~ ^gpu- ]] && continue
         [[ -z "$gpus" || "$gpus" == "0" ]] && continue
 
         VRAM_PER_GPU=${GPU_VRAM[$part]:-0}
         [[ "$VRAM_PER_GPU" -eq 0 ]] && continue
 
-        free_gpus=$((gpus))
-        total_free_vram=$((free_gpus * VRAM_PER_GPU))
+        num_gpus=$((gpus))
+        total_vram=$((num_gpus * VRAM_PER_GPU))
 
-        if [[ "$total_free_vram" -ge "$MIN_VRAM" ]]; then
+        if [[ "$total_vram" -ge "$MIN_VRAM" ]]; then
             needed=$(( (MIN_VRAM + VRAM_PER_GPU - 1) / VRAM_PER_GPU ))
-            CANDIDATES+=("${acct}|${part}|${needed}|${VRAM_PER_GPU}")
+            if [[ "$status" == "FREE" ]]; then
+                FREE_CANDIDATES+=("${acct}|${part}|${needed}|${VRAM_PER_GPU}")
+            elif [[ "$status" == "TOTAL" ]]; then
+                TOTAL_CANDIDATES+=("${acct}|${part}|${needed}|${VRAM_PER_GPU}")
+            fi
         fi
-    done < <(hyakalloc -a 2>/dev/null | grep "│")
+    done < <(hyakalloc 2>/dev/null | grep "│")
 
-    if [[ ${#CANDIDATES[@]} -eq 0 ]]; then
-        echo "Error: No partition found with >= ${MIN_VRAM} GB total free GPU VRAM."
+    # Helper: pick best from a candidate list by account priority > fewer GPUs > more VRAM/GPU.
+    pick_best() {
+        local -n cands=$1
+        BEST_ACCOUNT=""
+        BEST_PARTITION=""
+        BEST_NUM_GPUS=999
+        BEST_VRAM_PER_GPU=0
+        BEST_ACCT_PRIO=999
+
+        for cand in "${cands[@]}"; do
+            IFS='|' read -r c_acct c_part c_needed c_vram <<< "$cand"
+
+            c_prio=999
+            for i in "${!PREFERRED_ACCOUNTS[@]}"; do
+                if [[ "${PREFERRED_ACCOUNTS[$i]}" == "$c_acct" ]]; then
+                    c_prio=$i
+                    break
+                fi
+            done
+
+            if [[ "$c_prio" -lt "$BEST_ACCT_PRIO" ]] || \
+               [[ "$c_prio" -eq "$BEST_ACCT_PRIO" && "$c_needed" -lt "$BEST_NUM_GPUS" ]] || \
+               [[ "$c_prio" -eq "$BEST_ACCT_PRIO" && "$c_needed" -eq "$BEST_NUM_GPUS" && "$c_vram" -gt "$BEST_VRAM_PER_GPU" ]]; then
+                BEST_ACCOUNT="$c_acct"
+                BEST_PARTITION="$c_part"
+                BEST_NUM_GPUS="$c_needed"
+                BEST_VRAM_PER_GPU="$c_vram"
+                BEST_ACCT_PRIO="$c_prio"
+            fi
+        done
+    }
+
+    # Prefer free GPUs; fall back to TOTAL (job will queue).
+    if [[ ${#FREE_CANDIDATES[@]} -gt 0 ]]; then
+        pick_best FREE_CANDIDATES
+        echo "Found (free now): account=$BEST_ACCOUNT partition=$BEST_PARTITION (${BEST_VRAM_PER_GPU}GB/GPU × ${BEST_NUM_GPUS} = $((BEST_VRAM_PER_GPU * BEST_NUM_GPUS))GB total)"
+    elif [[ ${#TOTAL_CANDIDATES[@]} -gt 0 ]]; then
+        pick_best TOTAL_CANDIDATES
+        echo "No free GPUs available. Will queue on: account=$BEST_ACCOUNT partition=$BEST_PARTITION (${BEST_VRAM_PER_GPU}GB/GPU × ${BEST_NUM_GPUS} = $((BEST_VRAM_PER_GPU * BEST_NUM_GPUS))GB total)"
+    else
+        echo "Error: No partition found with >= ${MIN_VRAM} GB total GPU VRAM."
         echo "Try a lower --min_vram or specify --account and --partition manually."
         exit 1
     fi
-
-    # Pick best candidate: preferred account first, then fewer GPUs, then more VRAM/GPU.
-    BEST_ACCOUNT=""
-    BEST_PARTITION=""
-    BEST_NUM_GPUS=999
-    BEST_VRAM_PER_GPU=0
-    BEST_ACCT_PRIO=999
-
-    for cand in "${CANDIDATES[@]}"; do
-        IFS='|' read -r c_acct c_part c_needed c_vram <<< "$cand"
-
-        # Determine account priority (lower = better).
-        c_prio=999
-        for i in "${!PREFERRED_ACCOUNTS[@]}"; do
-            if [[ "${PREFERRED_ACCOUNTS[$i]}" == "$c_acct" ]]; then
-                c_prio=$i
-                break
-            fi
-        done
-
-        # Compare: account priority > fewer GPUs > more VRAM/GPU.
-        if [[ "$c_prio" -lt "$BEST_ACCT_PRIO" ]] || \
-           [[ "$c_prio" -eq "$BEST_ACCT_PRIO" && "$c_needed" -lt "$BEST_NUM_GPUS" ]] || \
-           [[ "$c_prio" -eq "$BEST_ACCT_PRIO" && "$c_needed" -eq "$BEST_NUM_GPUS" && "$c_vram" -gt "$BEST_VRAM_PER_GPU" ]]; then
-            BEST_ACCOUNT="$c_acct"
-            BEST_PARTITION="$c_part"
-            BEST_NUM_GPUS="$c_needed"
-            BEST_VRAM_PER_GPU="$c_vram"
-            BEST_ACCT_PRIO="$c_prio"
-        fi
-    done
 
     ACCOUNT="$BEST_ACCOUNT"
     PARTITION="$BEST_PARTITION"
     NUM_GPUS="$BEST_NUM_GPUS"
     VRAM_PER_GPU="$BEST_VRAM_PER_GPU"
-    echo "Found: account=$ACCOUNT partition=$PARTITION (${VRAM_PER_GPU}GB/GPU × ${NUM_GPUS} = $((VRAM_PER_GPU * NUM_GPUS))GB total)"
 fi
 
 echo "Submitting: k=$K n=$N account=$ACCOUNT partition=$PARTITION num_gpus=$NUM_GPUS time=$TIME"
