@@ -96,18 +96,21 @@ def run_single_n(
 
     if device == "cuda":
         torch.cuda.synchronize()
-        peak_bytes = torch.cuda.max_memory_allocated(0)
         peak_per_gpu = {}
         for i in range(min(num_gpus, torch.cuda.device_count())):
             peak_per_gpu[i] = torch.cuda.max_memory_allocated(i)
+        peak_max_bytes = max(peak_per_gpu.values())
+        peak_total_bytes = sum(peak_per_gpu.values())
     else:
         mem_after = proc.memory_info().rss
-        peak_bytes = max(mem_before, mem_after)
+        peak_max_bytes = max(mem_before, mem_after)
+        peak_total_bytes = peak_max_bytes
         peak_per_gpu = {}
 
     print(f"n={n}, diameter: {diameter}, layer sizes: {layer_sizes}")
     print(f"Last layer:\n{last_layer_str}")
-    print(f"Peak memory GPU0: {peak_bytes / 1024**3:.3f} GiB")
+    print(f"Peak memory (max GPU): {peak_max_bytes / 1024**3:.3f} GiB")
+    print(f"Peak memory (total): {peak_total_bytes / 1024**3:.3f} GiB")
     if num_gpus > 1 and peak_per_gpu:
         per_gpu_str = ", ".join(f"GPU{i}={v / 1024**3:.3f}" for i, v in sorted(peak_per_gpu.items()))
         print(f"Peak memory per-GPU: {per_gpu_str}")
@@ -119,8 +122,10 @@ def run_single_n(
             num_layers=len(layer_sizes),
             layer_sizes=layer_sizes,
             runtime_sec=runtime,
-            peak_memory_bytes=peak_bytes,
-            peak_memory_gib=peak_bytes / 1024**3,
+            peak_memory_bytes=peak_max_bytes,
+            peak_memory_gib=peak_max_bytes / 1024**3,
+            peak_memory_total_bytes=peak_total_bytes,
+            peak_memory_total_gib=peak_total_bytes / 1024**3,
             peak_per_gpu_gib={str(i): v / 1024**3 for i, v in peak_per_gpu.items()} if peak_per_gpu else None,
             last_layer_str=last_layer_str,
             last_layer_list=last_layer_list,
