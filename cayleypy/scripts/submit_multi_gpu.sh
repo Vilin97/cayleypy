@@ -24,7 +24,7 @@ GENERATOR_FAMILY="consecutive"
 COSET="True"
 CENTRAL_MODE="block"
 INVERSE_CLOSED="False"
-MEM="100G"
+MEM="10G"
 
 # Known per-GPU VRAM (GB) for each partition type.
 declare -A GPU_VRAM=(
@@ -185,7 +185,7 @@ sbatch <<EOF
 #SBATCH --account=${ACCOUNT}
 #SBATCH --partition=${PARTITION}
 #SBATCH --gres=gpu:${NUM_GPUS}
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=${MEM}
 #SBATCH --time=${TIME}
 #SBATCH --output=logs/%x_%N_%A.out
