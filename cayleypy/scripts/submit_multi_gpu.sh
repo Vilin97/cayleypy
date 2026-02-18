@@ -75,7 +75,7 @@ if [[ -n "$ACCOUNT" && -n "$PARTITION" ]]; then
 
     # Check free GPUs from hyakalloc.
     FREE_GPUS=$(hyakalloc 2>/dev/null | grep -A2 "│ *${ACCOUNT} *│ *${PARTITION} *│" \
-        | grep "FREE" | awk -F'│' '{print $5}' | tr -d ' ')
+        | grep "FREE" | awk -F'│' '{print $6}' | tr -d ' ')
     if [[ -z "$FREE_GPUS" ]]; then
         FREE_GPUS=0
     fi
@@ -96,12 +96,7 @@ else
 
     cur_acct=""
     cur_part=""
-    while IFS='│' read -r _ acct part cpus mem gpus status _; do
-        acct=$(echo "$acct" | xargs)
-        part=$(echo "$part" | xargs)
-        gpus=$(echo "$gpus" | xargs)
-        status=$(echo "$status" | xargs)
-
+    while IFS=',' read -r acct part gpus status; do
         # Carry forward account/partition from the TOTAL row.
         [[ -n "$acct" ]] && cur_acct="$acct"
         [[ -n "$part" ]] && cur_part="$part"
@@ -123,7 +118,14 @@ else
                 TOTAL_CANDIDATES+=("${cur_acct}|${cur_part}|${needed}|${VRAM_PER_GPU}")
             fi
         fi
-    done < <(hyakalloc 2>/dev/null | grep "│")
+    done < <(hyakalloc 2>/dev/null | grep "│" | awk -F'│' '{
+        acct=$2; part=$3; gpus=$6; status=$7;
+        gsub(/^[ \t]+|[ \t]+$/, "", acct);
+        gsub(/^[ \t]+|[ \t]+$/, "", part);
+        gsub(/^[ \t]+|[ \t]+$/, "", gpus);
+        gsub(/^[ \t]+|[ \t]+$/, "", status);
+        print acct "," part "," gpus "," status
+    }')
 
     # Helper: pick best from a candidate list by account priority > fewer GPUs > more VRAM/GPU.
     pick_best() {
