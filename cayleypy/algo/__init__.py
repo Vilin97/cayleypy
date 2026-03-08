@@ -6,6 +6,7 @@ from .bfs_distributed import BfsDistributed
 from .bfs_mitm import MeetInTheMiddle
 from .bfs_numpy import bfs_numpy
 from ..bfs_result import BfsResult
+from ..bloom_filter import BloomFilter
 from .find_path import find_path
 from .interactive_bfs import InteractiveBfs
 from .random_walks import RandomWalksGenerator

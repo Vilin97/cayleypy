@@ -4,6 +4,7 @@ from typing import Callable, Optional, TYPE_CHECKING, Union
 import numpy as np
 import torch
 
+from ..bloom_filter import BloomFilter
 from ..bfs_result import BfsResult
 from ..torch_utils import isin_via_searchsorted
 from .bfs_algo import BfsAlgorithm
@@ -57,25 +58,41 @@ class BfsDistributed:
     @staticmethod
     def _update_seen_parts(
         graph: "CayleyGraph",
-        seen_parts: list[list[torch.Tensor]],
+        seen_parts: list[list[torch.Tensor]] | list[BloomFilter],
         previous_parts: list[LayerPart],
         next_parts: list[LayerPart],
     ) -> None:
         for owner in range(graph.num_gpus):
-            prev_hashes = previous_parts[owner][1]
             next_hashes = next_parts[owner][1]
-            if graph.definition.generators_inverse_closed:
-                seen_parts[owner] = [part for part in [prev_hashes, next_hashes] if len(part) > 0]
-            elif len(next_hashes) > 0:
-                seen_parts[owner].append(next_hashes)
+            if isinstance(seen_parts[owner], BloomFilter):
+                seen_parts[owner].add(next_hashes)
+            else:
+                prev_hashes = previous_parts[owner][1]
+                if graph.definition.generators_inverse_closed:
+                    seen_parts[owner] = [part for part in [prev_hashes, next_hashes] if len(part) > 0]
+                elif len(next_hashes) > 0:
+                    seen_parts[owner].append(next_hashes)
 
     @staticmethod
     def _remove_seen_states(
         graph: "CayleyGraph",
-        seen_parts: list[list[torch.Tensor]],
+        seen_parts: list[list[torch.Tensor]] | list[BloomFilter],
         current_layer_hashes: torch.Tensor,
         streams: list[torch.cuda.Stream],
     ) -> torch.Tensor:
+        # Bloom-filter path: each hash belongs to exactly one GPU partition,
+        # so we only need to query the owning filter for each hash.
+        if seen_parts and isinstance(seen_parts[0], BloomFilter):
+            result = torch.ones(len(current_layer_hashes), dtype=torch.bool, device=current_layer_hashes.device)
+            ownership = (current_layer_hashes % graph.num_gpus).abs()
+            for owner in range(graph.num_gpus):
+                owner_mask = ownership == owner
+                if not owner_mask.any():
+                    continue
+                owner_hashes = current_layer_hashes[owner_mask]
+                result[owner_mask] = ~seen_parts[owner].contains(owner_hashes)
+            return result
+
         device_masks = []
         for owner, device in enumerate(graph.gpu_devices):
             if not seen_parts[owner]:
@@ -113,7 +130,7 @@ class BfsDistributed:
         cls,
         graph: "CayleyGraph",
         layer_parts: list[LayerPart],
-        seen_parts: list[list[torch.Tensor]],
+        seen_parts: list[list[torch.Tensor]] | list[BloomFilter],
         streams: list[torch.cuda.Stream],
     ) -> list[LayerPart]:
         total_size = sum(len(part_hashes) for _, part_hashes in layer_parts)
@@ -153,11 +170,16 @@ class BfsDistributed:
                         continue
 
                     received_states, received_hashes = graph.get_unique_states(received_states, hashes=received_hashes)
-                    for seen_hashes in seen_parts[owner]:
-                        if len(received_hashes) == 0:
-                            break
-                        mask = ~isin_via_searchsorted(received_hashes, seen_hashes)
-                        received_states, received_hashes = cls._apply_mask(received_states, received_hashes, mask)
+                    if isinstance(seen_parts[owner], BloomFilter):
+                        if len(received_hashes) > 0:
+                            mask = ~seen_parts[owner].contains(received_hashes)
+                            received_states, received_hashes = cls._apply_mask(received_states, received_hashes, mask)
+                    else:
+                        for seen_hashes in seen_parts[owner]:
+                            if len(received_hashes) == 0:
+                                break
+                            mask = ~isin_via_searchsorted(received_hashes, seen_hashes)
+                            received_states, received_hashes = cls._apply_mask(received_states, received_hashes, mask)
 
                     if len(received_hashes) == 0:
                         continue
@@ -189,6 +211,8 @@ class BfsDistributed:
         return_all_hashes: bool = False,
         stop_condition: Optional[Callable[[torch.Tensor, torch.Tensor], bool]] = None,
         disable_batching: bool = False,
+        bloom_filter_capacity: Optional[int] = None,
+        bloom_filter_false_positive_rate: float = 0.01,
     ) -> BfsResult:
         if return_all_edges or disable_batching:
             return BfsAlgorithm.bfs(
@@ -201,6 +225,8 @@ class BfsDistributed:
                 return_all_hashes=return_all_hashes,
                 stop_condition=stop_condition,
                 disable_batching=disable_batching,
+                bloom_filter_capacity=bloom_filter_capacity,
+                bloom_filter_false_positive_rate=bloom_filter_false_positive_rate,
             )
 
         if start_states is None:
@@ -208,7 +234,20 @@ class BfsDistributed:
         start_states = graph.encode_states(start_states)
         layer1, layer1_hashes = graph.get_unique_states(start_states)
         layer_parts = cls._partition_states(graph, layer1, layer1_hashes)
-        seen_parts = [[part_hashes] if len(part_hashes) > 0 else [] for _, part_hashes in layer_parts]
+        if bloom_filter_capacity is not None:
+            per_gpu_capacity = max(1, bloom_filter_capacity // graph.num_gpus)
+            seen_parts: list[list[torch.Tensor]] | list[BloomFilter] = [
+                BloomFilter(
+                    per_gpu_capacity,
+                    bloom_filter_false_positive_rate,
+                    device=device,
+                )
+                for device in graph.gpu_devices
+            ]
+            for owner, (_, part_hashes) in enumerate(layer_parts):
+                seen_parts[owner].add(part_hashes)
+        else:
+            seen_parts = [[part_hashes] if len(part_hashes) > 0 else [] for _, part_hashes in layer_parts]
         streams = [torch.cuda.Stream(device=device) for device in graph.gpu_devices]
 
         layer_sizes = [len(layer1)]

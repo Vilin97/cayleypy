@@ -4,6 +4,7 @@ from typing import Callable, Optional, Union, TYPE_CHECKING
 import numpy as np
 import torch
 
+from ..bloom_filter import BloomFilter
 from ..bfs_result import BfsResult
 from ..torch_utils import isin_via_searchsorted
 
@@ -26,6 +27,8 @@ class BfsAlgorithm:
         return_all_hashes: bool = False,
         stop_condition: Optional[Callable[[torch.Tensor, torch.Tensor], bool]] = None,
         disable_batching: bool = False,
+        bloom_filter_capacity: Optional[int] = None,
+        bloom_filter_false_positive_rate: float = 0.01,
     ) -> BfsResult:
         """Runs bread-first search (BFS) algorithm from given `start_states`."""
         if start_states is None:
@@ -41,9 +44,22 @@ class BfsAlgorithm:
         max_layer_size_to_store = max_layer_size_to_store or 10**15
 
         do_batching = not return_all_edges and not disable_batching
-        seen_states_hashes = [layer1_hashes]
+
+        if bloom_filter_capacity is not None:
+            bloom_filter: Optional[BloomFilter] = BloomFilter(
+                bloom_filter_capacity,
+                bloom_filter_false_positive_rate,
+                device=graph.device,
+            )
+            bloom_filter.add(layer1_hashes)
+            seen_states_hashes = None
+        else:
+            bloom_filter = None
+            seen_states_hashes = [layer1_hashes]
 
         def _remove_seen_states(current_layer_hashes: torch.Tensor) -> torch.Tensor:
+            if bloom_filter is not None:
+                return ~bloom_filter.contains(current_layer_hashes)
             ans = ~isin_via_searchsorted(current_layer_hashes, seen_states_hashes[-1])
             for h in seen_states_hashes[:-1]:
                 ans &= ~isin_via_searchsorted(current_layer_hashes, h)
@@ -61,8 +77,19 @@ class BfsAlgorithm:
                 layer2_hashes_batches = []
                 for layer1_batch in layer1.tensor_split(num_batches, dim=0):
                     layer2_batch = graph.get_neighbors(layer1_batch)
-                    layer2_batch, layer2_hashes_batch = graph.get_unique_states(layer2_batch)
-                    mask = _remove_seen_states(layer2_hashes_batch)
+                    if bloom_filter is not None:
+                        layer2_hashes_batch = graph.hasher.make_hashes(layer2_batch)
+                        not_seen = ~bloom_filter.contains(layer2_hashes_batch)
+                        layer2_batch = layer2_batch[not_seen]
+                        layer2_hashes_batch = layer2_hashes_batch[not_seen]
+                        layer2_batch, layer2_hashes_batch = graph.get_unique_states(layer2_batch, hashes=layer2_hashes_batch)
+                    else:
+                        layer2_batch, layer2_hashes_batch = graph.get_unique_states(layer2_batch)
+                    if bloom_filter is not None:
+                        # Pre-filter already removed bloom-seen states; only check cross-batch dups.
+                        mask = torch.ones(len(layer2_hashes_batch), dtype=torch.bool, device=layer2_hashes_batch.device)
+                    else:
+                        mask = _remove_seen_states(layer2_hashes_batch)
                     for other_batch_hashes in layer2_hashes_batches:
                         mask &= ~isin_via_searchsorted(layer2_hashes_batch, other_batch_hashes)
                     layer2_batch, layer2_hashes_batch = _apply_mask(layer2_batch, layer2_hashes_batch, mask)
@@ -78,9 +105,16 @@ class BfsAlgorithm:
                     edges_list_starts += [layer1_hashes.repeat(graph.definition.n_generators)]
                     edges_list_ends.append(layer1_neighbors_hashes)
 
+                if bloom_filter is not None:
+                    not_seen = ~bloom_filter.contains(layer1_neighbors_hashes)
+                    layer1_neighbors = layer1_neighbors[not_seen]
+                    layer1_neighbors_hashes = layer1_neighbors_hashes[not_seen]
+
                 layer2, layer2_hashes = graph.get_unique_states(layer1_neighbors, hashes=layer1_neighbors_hashes)
-                mask = _remove_seen_states(layer2_hashes)
-                layer2, layer2_hashes = _apply_mask(layer2, layer2_hashes, mask)
+                if bloom_filter is None:
+                    # No bloom pre-filter ran, so check seen states the normal way.
+                    mask = _remove_seen_states(layer2_hashes)
+                    layer2, layer2_hashes = _apply_mask(layer2, layer2_hashes, mask)
 
             if layer2.shape[0] * layer2.shape[1] * 8 > 0.1 * graph.memory_limit_bytes:
                 graph.free_memory()
@@ -97,9 +131,12 @@ class BfsAlgorithm:
 
             layer1 = layer2
             layer1_hashes = layer2_hashes
-            seen_states_hashes.append(layer2_hashes)
-            if graph.definition.generators_inverse_closed:
-                seen_states_hashes = seen_states_hashes[-2:]
+            if bloom_filter is not None:
+                bloom_filter.add(layer2_hashes)
+            else:
+                seen_states_hashes.append(layer2_hashes)
+                if graph.definition.generators_inverse_closed:
+                    seen_states_hashes = seen_states_hashes[-2:]
             if len(layer2) >= max_layer_size_to_explore:
                 break
             if stop_condition is not None and stop_condition(layer2, layer2_hashes):
