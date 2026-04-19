@@ -16,6 +16,9 @@ def run_single_n(
     central_mode: str,
     inverse_closed: bool,
     num_gpus: int = 0,
+    L: int | None = None,
+    perm_type: int = 2,
+    d: int = 1,
 ):
     wandb.init(
         entity="CayleyPy",
@@ -23,6 +26,7 @@ def run_single_n(
         name=(
             f"k_{k}_n_{n}_{generator_family}_{device}_"
             f"coset_{int(coset)}_{central_mode if coset else 'full'}_"
+            f"L_{L}_"
             f"inv_{int(inverse_closed)}"
         ),
         config={
@@ -34,6 +38,9 @@ def run_single_n(
             "central_mode": central_mode,
             "inverse_closed": inverse_closed,
             "num_gpus": num_gpus,
+            "L": L,
+            "perm_type": perm_type,
+            "d": d,
         },
     )
 
@@ -67,6 +74,8 @@ def run_single_n(
         defn = PermutationGroups.consecutive_k_cycles(n, k)
     elif generator_family == "wrapped":
         defn = PermutationGroups.wrapped_k_cycles(n, k)
+    elif generator_family == "koltsov3":
+        defn = PermutationGroups.koltsov3(n, perm_type=perm_type, k=k, d=d)
     else:
         raise ValueError(f"Invalid generator_family: {generator_family}")
 
@@ -75,7 +84,9 @@ def run_single_n(
 
     # IMPORTANT: full graph vs coset
     if coset:
-        if central_mode == "alternating":
+        if central_mode == "L" and L is not None:
+            central = [0] * L + [1] * (n - L)
+        elif central_mode == "alternating":
             central = [0, 1] * (n // 2) + [0] * (n - 2 * (n // 2))
         elif central_mode == "block":
             central = [0] * (n // 2) + [1] * (n - n // 2)
@@ -119,6 +130,7 @@ def run_single_n(
     wandb.log(
         dict(
             diameter=diameter,
+            last_layer_count=len(last_layer_list),
             num_layers=len(layer_sizes),
             layer_sizes=layer_sizes,
             runtime_sec=runtime,
@@ -131,6 +143,9 @@ def run_single_n(
             last_layer_list=last_layer_list,
             k=k,
             n=n,
+            L=L,
+            perm_type=perm_type,
+            d=d,
             generator_family=generator_family,
             device=device,
             coset=coset,
@@ -147,10 +162,13 @@ def parse_args():
     p.add_argument("--k", type=int, required=True, help="cycle length for the generators")
     p.add_argument("--n", type=int, required=True, help="number of elements being permuted (group is S_n or a coset thereof)")
     p.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="compute device for BFS (default: cuda)")
-    p.add_argument("--generator_family", choices=["consecutive", "wrapped"], default="consecutive", help="'consecutive' uses k-cycles on adjacent elements (1..k, 2..k+1, ...); 'wrapped' wraps around so position n connects to position 1 (default: consecutive)")
+    p.add_argument("--generator_family", choices=["consecutive", "wrapped", "koltsov3"], default="consecutive", help="'consecutive' uses k-cycles on adjacent elements (1..k, 2..k+1, ...); 'wrapped' wraps around so position n connects to position 1; 'koltsov3' uses 3 involutions I,K,S (default: consecutive)")
     p.add_argument("--coset", type={"True": True, "False": False}.__getitem__, default=True, help="if True, restrict to a coset via a central state coloring, reducing the graph from n! to C(n, n/2) vertices; if False, BFS the full Cayley graph (default: True)")
-    p.add_argument("--central_mode", choices=["alternating", "block"], default="block", help="how to color positions for the coset: 'block' puts first half as 0 and second half as 1; 'alternating' interleaves 0,1,0,1,... Only used when --coset True (default: block)")
+    p.add_argument("--central_mode", choices=["alternating", "block", "L"], default="block", help="how to color positions for the coset: 'block' puts first half as 0 and second half as 1; 'alternating' interleaves 0,1,0,1,...; 'L' uses [0]*L + [1]*(n-L) with --L parameter. Only used when --coset True (default: block)")
+    p.add_argument("--L", type=int, default=None, help="number of 0s in the central state [0]*L + [1]*(n-L). Required when --central_mode L")
     p.add_argument("--inverse_closed", type={"True": True, "False": False}.__getitem__, default=False, help="if True, add the inverse of each generator to the generating set, making the Cayley graph undirected (default: False)")
+    p.add_argument("--perm_type", type=int, default=2, choices=[1, 2], help="type of S generator for koltsov3 (default: 2)")
+    p.add_argument("--d", type=int, default=1, help="parameter d for koltsov3 type 1 S generator (default: 1)")
     p.add_argument("--num_gpus", type=int, default=0, help="number of GPUs for distributed BFS (0 = all available, 1 = single GPU, default: 0)")
     return p.parse_args()
 
@@ -166,4 +184,7 @@ if __name__ == "__main__":
         a.central_mode,
         a.inverse_closed,
         a.num_gpus,
+        L=a.L,
+        perm_type=a.perm_type,
+        d=a.d,
     )
